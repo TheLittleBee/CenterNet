@@ -20,7 +20,16 @@ def main(opt):
   torch.manual_seed(opt.seed)
   torch.backends.cudnn.benchmark = not opt.not_cuda_benchmark and not opt.test
   Dataset = get_dataset(opt.dataset, opt.task)
-  opt = opts().update_dataset_info_and_set_heads(opt, Dataset)
+  print('Setting up valdata...')
+  valdata = Dataset(opt, 'val')
+  val_loader = torch.utils.data.DataLoader(
+      valdata,
+      batch_size=1,
+      shuffle=False,
+      num_workers=1,
+      pin_memory=True
+  )
+  opt = opts().update_dataset_info_and_set_heads(opt, valdata)
   print(opt)
 
   logger = Logger(opt)
@@ -40,20 +49,12 @@ def main(opt):
   trainer = Trainer(opt, model, optimizer)
   trainer.set_device(opt.gpus, opt.chunk_sizes, opt.device)
 
-  print('Setting up data...')
-  val_loader = torch.utils.data.DataLoader(
-      Dataset(opt, 'val'), 
-      batch_size=1, 
-      shuffle=False,
-      num_workers=1,
-      pin_memory=True
-  )
-
   if opt.test:
     _, preds = trainer.val(0, val_loader)
     val_loader.dataset.run_eval(preds, opt.save_dir)
     return
 
+  print('Setting up traindata...')
   train_loader = torch.utils.data.DataLoader(
       Dataset(opt, 'train'), 
       batch_size=opt.batch_size, 

@@ -14,6 +14,7 @@ class opts(object):
                              help='ctdet | ddd | multi_pose | exdet')
     self.parser.add_argument('--dataset', default='coco',
                              help='coco | kitti | coco_hp | pascal')
+    self.parser.add_argument('--data_dir', default='')
     self.parser.add_argument('--exp_id', default='default')
     self.parser.add_argument('--test', action='store_true')
     self.parser.add_argument('--debug', type=int, default=0,
@@ -131,6 +132,8 @@ class opts(object):
                                   'apply rotation augmentation.')
     self.parser.add_argument('--flip', type = float, default=0.5,
                              help='probability of applying flip augmentation.')
+    self.parser.add_argument('--vflip',type=float, default=0.,
+                             help='probability of applying vertical flip, default not using')
     self.parser.add_argument('--no_color_aug', action='store_true',
                              help='not use the color augmenation '
                                   'from CornerNet')
@@ -269,7 +272,7 @@ class opts(object):
     print('training chunk_sizes:', opt.chunk_sizes)
 
     opt.root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
-    opt.data_dir = os.path.join(opt.root_dir, 'data')
+    opt.data_dir = os.path.join(opt.root_dir, 'data') if opt.data_dir == '' else opt.data_dir
     opt.exp_dir = os.path.join(opt.root_dir, 'exp', opt.task)
     opt.save_dir = os.path.join(opt.exp_dir, opt.exp_id)
     opt.debug_dir = os.path.join(opt.save_dir, 'debug')
