@@ -16,22 +16,31 @@ from external.nms import soft_nms
 from opts import opts
 from logger import Logger
 from utils.utils import AverageMeter
-from datasets.dataset_factory import dataset_factory
+from datasets.dataset_factory import dataset_factory, get_dataset
 from detectors.detector_factory import detector_factory
 
 class PrefetchDataset(torch.utils.data.Dataset):
   def __init__(self, opt, dataset, pre_process_func):
-    self.images = dataset.images
-    self.load_image_func = dataset.coco.loadImgs
-    self.img_dir = dataset.img_dir
+    if hasattr(dataset,'coco'):
+      self.images = dataset.images
+      self.load_image_func = dataset.coco.loadImgs
+      self.img_dir = dataset.img_dir
+      self.use_coco = True
+    else:
+      self.images = dataset.images
+      self.use_coco = False
     self.pre_process_func = pre_process_func
     self.opt = opt
   
   def __getitem__(self, index):
     img_id = self.images[index]
-    img_info = self.load_image_func(ids=[img_id])[0]
-    img_path = os.path.join(self.img_dir, img_info['file_name'])
-    image = cv2.imread(img_path)
+    if self.use_coco:
+      img_info = self.load_image_func(ids=[img_id])[0]
+      img_path = os.path.join(self.img_dir, img_info['file_name'])
+      image = cv2.imread(img_path)
+    else:
+      image = cv2.imread(img_id)
+      img_info = {'calib': 0.}
     images, meta = {}, {}
     for scale in opt.test_scales:
       if opt.task == 'ddd':
@@ -47,14 +56,14 @@ class PrefetchDataset(torch.utils.data.Dataset):
 def prefetch_test(opt):
   os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpus_str
 
-  Dataset = dataset_factory[opt.dataset]
-  opt = opts().update_dataset_info_and_set_heads(opt, Dataset)
-  print(opt)
-  Logger(opt)
-  Detector = detector_factory[opt.task]
-  
+  Dataset = dataset_factory[opt.dataset] if not opt.dataset == 'yolo' else get_dataset(opt.dataset, opt.task)
   split = 'val' if not opt.trainval else 'test'
   dataset = Dataset(opt, split)
+
+  opt = opts().update_dataset_info_and_set_heads(opt, dataset)
+  print(opt)
+  # log = Logger(opt)
+  Detector = detector_factory[opt.task]
   detector = Detector(opt)
   
   data_loader = torch.utils.data.DataLoader(
@@ -68,7 +77,10 @@ def prefetch_test(opt):
   avg_time_stats = {t: AverageMeter() for t in time_stats}
   for ind, (img_id, pre_processed_images) in enumerate(data_loader):
     ret = detector.run(pre_processed_images)
-    results[img_id.numpy().astype(np.int32)[0]] = ret['results']
+    if opt.dataset == 'yolo':
+      results[img_id[0]] = ret['results']
+    else:
+      results[img_id.numpy().astype(np.int32)[0]] = ret['results']
     Bar.suffix = '[{0}/{1}]|Tot: {total:} |ETA: {eta:} '.format(
                    ind, num_iters, total=bar.elapsed_td, eta=bar.eta_td)
     for t in avg_time_stats:
@@ -77,19 +89,20 @@ def prefetch_test(opt):
         t, tm = avg_time_stats[t])
     bar.next()
   bar.finish()
+  # log.close()
   dataset.run_eval(results, opt.save_dir)
 
 def test(opt):
   os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpus_str
 
-  Dataset = dataset_factory[opt.dataset]
-  opt = opts().update_dataset_info_and_set_heads(opt, Dataset)
-  print(opt)
-  Logger(opt)
-  Detector = detector_factory[opt.task]
-  
+  Dataset = dataset_factory[opt.dataset] if not opt.dataset == 'yolo' else get_dataset(opt.dataset, opt.task)
   split = 'val' if not opt.trainval else 'test'
   dataset = Dataset(opt, split)
+
+  opt = opts().update_dataset_info_and_set_heads(opt, dataset)
+  print(opt)
+  # log = Logger(opt)
+  Detector = detector_factory[opt.task]
   detector = Detector(opt)
 
   results = {}
@@ -99,14 +112,18 @@ def test(opt):
   avg_time_stats = {t: AverageMeter() for t in time_stats}
   for ind in range(num_iters):
     img_id = dataset.images[ind]
-    img_info = dataset.coco.loadImgs(ids=[img_id])[0]
-    img_path = os.path.join(dataset.img_dir, img_info['file_name'])
+    if hasattr(dataset,'coco'):
+      img_info = dataset.coco.loadImgs(ids=[img_id])[0]
+      img_path = os.path.join(dataset.img_dir, img_info['file_name'])
+    else:
+      img_path = img_id
+      img_info = {'calib':0}
 
     if opt.task == 'ddd':
       ret = detector.run(img_path, img_info['calib'])
     else:
       ret = detector.run(img_path)
-    
+
     results[img_id] = ret['results']
 
     Bar.suffix = '[{0}/{1}]|Tot: {total:} |ETA: {eta:} '.format(
@@ -116,6 +133,7 @@ def test(opt):
       Bar.suffix = Bar.suffix + '|{} {:.3f} '.format(t, avg_time_stats[t].avg)
     bar.next()
   bar.finish()
+  # log.close()
   dataset.run_eval(results, opt.save_dir)
 
 if __name__ == '__main__':

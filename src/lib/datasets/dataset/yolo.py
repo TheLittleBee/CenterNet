@@ -28,11 +28,11 @@ class YOLO(data.Dataset):
         self.num_classes = len(self.class_name)
         if split == 'train':
             with open(os.path.join(data_dir, 'train.txt'), 'r') as f:
-                self.imgs = [l.rstrip() for l in f.readlines()]
+                self.images = [l.rstrip() for l in f.readlines()]
         else:
             with open(os.path.join(data_dir, 'valid.txt'), 'r') as f:
-                self.imgs = [l.rstrip() for l in f.readlines()]
-        self.anno = [l.replace('images', 'labels').replace('.jpg', '.txt') for l in self.imgs]
+                self.images = [l.rstrip() for l in f.readlines()]
+        self.anno = [l.replace('images', 'labels').replace('.jpg', '.txt') for l in self.images]
 
         self.hflip = hflip
         self.vflip = vflip
@@ -44,7 +44,7 @@ class YOLO(data.Dataset):
         self.max_objs = 128
 
     def __getitem__(self, index):
-        img_id = self.imgs[index]
+        img_id = self.images[index]
         img = cv2.imread(img_id)
         height, width = img.shape[0], img.shape[1]
         # YOLO标注转换
@@ -62,6 +62,7 @@ class YOLO(data.Dataset):
         # 数据变换
         c = np.array([img.shape[1] / 2., img.shape[0] / 2.], dtype=np.float32)
         s = max(img.shape[0], img.shape[1]) * 1.0
+        rotation = 0
         input_h, input_w = self.opt.input_h, self.opt.input_w
 
         hflipped = False
@@ -78,11 +79,9 @@ class YOLO(data.Dataset):
                 vflipped = True
                 img = img[::-1, :, :]
                 c[1] = height - c[1] - 1
-        # 旋转参数设置
-        if self.rotation:
-            rotation = np.clip(np.random.randn() * self.rotation, -self.rotation, self.rotation)
-        else:
-            rotation = 0
+            # 旋转参数设置
+            if self.rotation:
+                rotation = np.clip(np.random.randn() * self.rotation, -self.rotation, self.rotation)
 
         trans_input = get_affine_transform(
             c, s, rotation, [input_w, input_h])
@@ -164,5 +163,18 @@ class YOLO(data.Dataset):
             ret['meta'] = meta
         return ret
 
+    def run_eval(self, results, save_dir):
+        dir_path = os.path.join(save_dir, 'result')
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+        for k, v in results.items():
+            path = os.path.join(dir_path, os.path.basename(k).replace('.jpg', '.txt'))
+            dets = np.zeros((0, 6), dtype=np.float32)
+            for cls, det in v.items():
+                cls_id = np.ones((len(det), 1), dtype=np.float32) * (cls - 1)
+                dets = np.append(dets, np.hstack((det, cls_id)), 0)
+            np.savetxt(path, dets)
+        return
+
     def __len__(self):
-        return len(self.imgs)
+        return len(self.images)
