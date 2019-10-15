@@ -57,8 +57,11 @@ class ExdetTrainer(BaseTrainer):
                              output['hm_c']).detach().cpu().numpy()
     detections[:, :, :4] *= opt.input_res / opt.output_res
     for i in range(1):
+      dataset = opt.dataset
+      if opt.dataset == 'yolo':
+        dataset = opt.names
       debugger = Debugger(
-        dataset=opt.dataset, ipynb=(opt.debug==3), theme=opt.debugger_theme)
+        dataset=dataset, ipynb=(opt.debug==3), theme=opt.debugger_theme)
       pred_hm = np.zeros((opt.input_res, opt.input_res, 3), dtype=np.uint8)
       gt_hm = np.zeros((opt.input_res, opt.input_res, 3), dtype=np.uint8)
       img = batch['input'][i].detach().cpu().numpy().transpose(1, 2, 0)

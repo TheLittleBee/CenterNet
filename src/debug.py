@@ -15,7 +15,7 @@ if __name__ == '__main__':
     dataset = YOLO(opt.data_dir, opt.flip, opt.vflip, opt.rotate, opt.scale, opt, 'train')
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
     for i in range(len(dataset)):
-        debugger = Debugger(dataset=dataset)
+        debugger = Debugger(dataset=opt.names)
         data = dataset[i]
         img = data['input'].transpose(1, 2, 0)
         hm = data['hm']

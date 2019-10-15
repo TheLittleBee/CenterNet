@@ -29,8 +29,11 @@ class YOLO(data.Dataset):
         if split == 'train':
             with open(os.path.join(data_dir, 'train.txt'), 'r') as f:
                 self.images = [l.rstrip() for l in f.readlines()]
-        else:
+        elif split == 'val':
             with open(os.path.join(data_dir, 'valid.txt'), 'r') as f:
+                self.images = [l.rstrip() for l in f.readlines()]
+        else:
+            with open(os.path.join(data_dir, 'test.txt', 'r')) as f:
                 self.images = [l.rstrip() for l in f.readlines()]
         self.anno = [l.replace('images', 'labels').replace('.jpg', '.txt') for l in self.images]
 

@@ -22,6 +22,9 @@ class Debugger(object):
       self.colors = self.colors.reshape(-1)[::-1].reshape(len(colors), 1, 1, 3)
       self.colors = np.clip(self.colors, 0., 0.6 * 255).astype(np.uint8)
     self.dim_scale = 1
+    if isinstance(dataset, (list, tuple)):
+        self.names = dataset
+        dataset = ''
     if dataset == 'coco_hp':
       self.names = ['p']
       self.num_class = 1
@@ -62,8 +65,6 @@ class Debugger(object):
       self.focal_length = 721.5377
       self.W = 1242
       self.H = 375
-    else:
-      self.names = dataset.class_name
     num_classes = len(self.names)
     self.down_ratio=down_ratio
     # for bird view
