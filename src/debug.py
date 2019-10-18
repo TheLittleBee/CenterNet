@@ -12,7 +12,7 @@ from utils.debugger import Debugger
 
 if __name__ == '__main__':
     opt = opts().parse()
-    dataset = YOLO(opt.data_dir, opt.flip, opt.vflip, opt.rotate, opt.scale, opt, 'train')
+    dataset = YOLO(opt.data_dir, opt.flip, opt.vflip, opt.rotate, opt.scale, opt.shear, opt, 'train')
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
     for i in range(len(dataset)):
         debugger = Debugger(dataset=opt.names)

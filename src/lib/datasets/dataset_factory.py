@@ -33,7 +33,7 @@ def get_dataset(dataset, task):
   if dataset == 'yolo':
     class Dataset(YOLO):
       def __init__(self,opt,split):
-        super().__init__(opt.data_dir, opt.flip, opt.vflip, opt.rotate, opt.scale, opt, split)
+        super().__init__(opt.data_dir, opt.flip, opt.vflip, opt.rotate, opt.scale, opt.shear, opt, split)
     return Dataset
   class Dataset(dataset_factory[dataset], _sample_factory[task]):
     pass

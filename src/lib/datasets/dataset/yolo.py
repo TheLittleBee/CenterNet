@@ -21,7 +21,7 @@ class YOLO(data.Dataset):
     std = np.array([0.28863828, 0.27408164, 0.27809835],
                    dtype=np.float32).reshape(1, 1, 3)
 
-    def __init__(self, data_dir, hflip, vflip, rotation, scale, opt, split, gray=False):
+    def __init__(self, data_dir, hflip, vflip, rotation, scale, shear, opt, split, gray=False):
         # 读文件得到路径和标注
         with open(os.path.join(data_dir, 'classes.txt'), 'r') as f:
             self.class_name = [l.rstrip() for l in f.readlines()]
@@ -33,7 +33,7 @@ class YOLO(data.Dataset):
             with open(os.path.join(data_dir, 'valid.txt'), 'r') as f:
                 self.images = [l.rstrip() for l in f.readlines()]
         else:
-            with open(os.path.join(data_dir, 'test.txt', 'r')) as f:
+            with open(os.path.join(data_dir, 'test.txt'), 'r') as f:
                 self.images = [l.rstrip() for l in f.readlines()]
         self.anno = [l.replace('images', 'labels').replace('.jpg', '.txt') for l in self.images]
 
@@ -41,6 +41,7 @@ class YOLO(data.Dataset):
         self.vflip = vflip
         self.rotation = rotation
         self.scale = scale
+        self.shear = shear
         self.gray = gray
         self.opt = opt
         self.split = split
@@ -52,10 +53,10 @@ class YOLO(data.Dataset):
         height, width = img.shape[0], img.shape[1]
         # YOLO标注转换
         anns = np.loadtxt(self.anno[index]).reshape(-1, 5)
-        x1 = width * (anns[:, 1] - anns[:, 3] / 2) - 1
-        y1 = height * (anns[:, 2] - anns[:, 4] / 2) - 1
-        x2 = width * (anns[:, 1] + anns[:, 3] / 2) - 1
-        y2 = height * (anns[:, 2] + anns[:, 4] / 2) - 1
+        x1 = width * (anns[:, 1] - anns[:, 3] / 2)
+        y1 = height * (anns[:, 2] - anns[:, 4] / 2)
+        x2 = width * (anns[:, 1] + anns[:, 3] / 2)
+        y2 = height * (anns[:, 2] + anns[:, 4] / 2)
         anns[:, 1] = x1
         anns[:, 2] = y1
         anns[:, 3] = x2
@@ -63,14 +64,37 @@ class YOLO(data.Dataset):
         num_objs = min(len(anns), self.max_objs)
 
         # 数据变换
-        c = np.array([img.shape[1] / 2., img.shape[0] / 2.], dtype=np.float32)
-        s = max(img.shape[0], img.shape[1]) * 1.0
+        c = np.array([width / 2., height / 2.], dtype=np.float32)
+        s = max(height, width) * 1.0
         rotation = 0
+        shear = 0
         input_h, input_w = self.opt.input_h, self.opt.input_w
 
         hflipped = False
         vflipped = False
         if self.split == 'train':
+            if self.shear:
+                shear = np.clip(np.random.randn() * self.shear, -self.shear, self.shear)
+            if shear:
+                if shear < 0:
+                    img = img[:, ::-1, :]
+                    anns[:, [1, 3]] = width - anns[:, [3, 1]] - 1
+
+                M = np.array([[1, abs(shear), 0], [0, 1, 0]])
+
+                nW = width + abs(shear * height)
+
+                anns[:, [1, 3]] += ((anns[:, [2, 4]]) * abs(shear)).astype(int)
+
+                img = cv2.warpAffine(img, M, (int(nW), height))
+
+                if shear < 0:
+                    img = img[:, ::-1, :]
+                    anns[:, [1, 3]] = nW - anns[:, [3, 1]] - 1
+                c[0] = nW / 2.
+                s = max(nW, s)
+                width = nW
+
             sf = self.scale
             s = s * np.clip(np.random.randn() * sf + 1, 1 - sf, 1 + sf)
 
@@ -85,6 +109,7 @@ class YOLO(data.Dataset):
             # 旋转参数设置
             if self.rotation:
                 rotation = np.clip(np.random.randn() * self.rotation, -self.rotation, self.rotation)
+
 
         trans_input = get_affine_transform(
             c, s, rotation, [input_w, input_h])
@@ -177,7 +202,6 @@ class YOLO(data.Dataset):
                 cls_id = np.ones((len(det), 1), dtype=np.float32) * (cls - 1)
                 dets = np.append(dets, np.hstack((det, cls_id)), 0)
             np.savetxt(path, dets)
-        return
 
     def __len__(self):
         return len(self.images)

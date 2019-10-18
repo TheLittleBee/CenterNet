@@ -100,6 +100,7 @@ class opts(object):
                                   'test on test set')
 
     # test
+    self.parser.add_argument('--image', default='')
     self.parser.add_argument('--flip_test', action='store_true',
                              help='flip data augmentation.')
     self.parser.add_argument('--test_scales', type=str, default='1',
@@ -124,7 +125,7 @@ class opts(object):
     self.parser.add_argument('--shift', type=float, default=0.1,
                              help='when not using random crop'
                                   'apply shift augmentation.')
-    self.parser.add_argument('--scale', type=float, default=0.4,
+    self.parser.add_argument('--scale', type=float, default=0.2,
                              help='when not using random crop'
                                   'apply scale augmentation.')
     self.parser.add_argument('--rotate', type=float, default=0,
@@ -132,8 +133,10 @@ class opts(object):
                                   'apply rotation augmentation.')
     self.parser.add_argument('--flip', type = float, default=0.5,
                              help='probability of applying flip augmentation.')
-    self.parser.add_argument('--vflip',type=float, default=0.,
+    self.parser.add_argument('--vflip', type=float, default=0.,
                              help='probability of applying vertical flip, default not using')
+    self.parser.add_argument('--shear', type=float, default=0.,
+                             help='apply shear augmentation')
     self.parser.add_argument('--no_color_aug', action='store_true',
                              help='not use the color augmenation '
                                   'from CornerNet')
