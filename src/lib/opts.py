@@ -69,7 +69,7 @@ class opts(object):
                                   '-1 for default setting: '
                                   '64 for resnets and 256 for dla.')
     self.parser.add_argument('--down_ratio', type=int, default=4,
-                             help='output stride. Currently only supports 4.')
+                             help='output stride. Currently supports 2 | 4 | 8 | 16. Except hourglass.')
 
     # input
     self.parser.add_argument('--input_res', type=int, default=-1, 

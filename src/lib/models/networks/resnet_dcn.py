@@ -129,7 +129,8 @@ def fill_fc_weights(layers):
 
 class PoseResNet(nn.Module):
 
-    def __init__(self, block, layers, heads, head_conv):
+    def __init__(self, block, layers, heads, head_conv, down_ratio=4):
+        assert down_ratio in [2, 4, 8, 16]
         self.inplanes = 64
         self.heads = heads
         self.deconv_with_bias = False
@@ -144,12 +145,20 @@ class PoseResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        up_num = int(math.log2(32 / down_ratio))
+        fliters = [256, 128, 64, 64]
+        kernels = [4, 4, 4, 4]
 
         # used for deconv layers
+        # self.deconv_layers = self._make_deconv_layer(
+        #     3,
+        #     [256, 128, 64],
+        #     [4, 4, 4],
+        # )
         self.deconv_layers = self._make_deconv_layer(
-            3,
-            [256, 128, 64],
-            [4, 4, 4],
+            up_num,
+            fliters[:up_num],
+            kernels[:up_num],
         )
 
         for head in self.heads:
@@ -282,9 +291,9 @@ resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
                152: (Bottleneck, [3, 8, 36, 3])}
 
 
-def get_pose_net(num_layers, heads, head_conv=256):
+def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4):
   block_class, layers = resnet_spec[num_layers]
 
-  model = PoseResNet(block_class, layers, heads, head_conv=head_conv)
+  model = PoseResNet(block_class, layers, heads, head_conv=head_conv, down_ratio=down_ratio)
   model.init_weights(num_layers)
   return model

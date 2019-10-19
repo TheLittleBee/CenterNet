@@ -38,10 +38,20 @@ def detect(opt):
 
     images = []
     if os.path.isfile(opt.image):
-        images.append(opt.image)
+        if os.path.splitext(opt.image)[1] == '.txt':
+            name = os.path.splitext(os.path.basename(opt.image))[0]
+            dir_path = os.path.join(dir_path, name)
+            if not os.path.exists(dir_path):
+                os.mkdir(dir_path)
+            with open(opt.image, 'r') as f:
+                images.extend([l.rstrip() for l in f.readlines()])
+        elif os.path.splitext(opt.image)[1] in ['.jpg', '.png', '.bmp']:
+            images.append(opt.image)
+        else:
+            raise Exception('NOT SUPPORT FILE TYPE!!!')
     else:
         for file in os.listdir(opt.image):
-            if file.endswith('.jpg'):
+            if os.path.splitext(file)[1] in ['.jpg', '.png', '.bmp']:
                 images.append(os.path.join(opt.image, file))
     num_iters = len(images)
     bar = Bar('{}'.format(opt.exp_id), max=num_iters)

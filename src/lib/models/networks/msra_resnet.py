@@ -10,6 +10,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import math
 
 import torch
 import torch.nn as nn
@@ -106,7 +107,8 @@ class Bottleneck(nn.Module):
 
 class PoseResNet(nn.Module):
 
-    def __init__(self, block, layers, heads, head_conv, **kwargs):
+    def __init__(self, block, layers, heads, head_conv, down_ratio=4):
+        assert down_ratio in [2, 4, 8, 16]
         self.inplanes = 64
         self.deconv_with_bias = False
         self.heads = heads
@@ -121,12 +123,20 @@ class PoseResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        up_num = int(math.log2(32 / down_ratio))
+        fliters = [256, 256, 256, 256]
+        kernels = [4, 4, 4, 4]
 
         # used for deconv layers
+        # self.deconv_layers = self._make_deconv_layer(
+        #     3,
+        #     [256, 128, 64],
+        #     [4, 4, 4],
+        # )
         self.deconv_layers = self._make_deconv_layer(
-            3,
-            [256, 256, 256],
-            [4, 4, 4],
+            up_num,
+            fliters[:up_num],
+            kernels[:up_num],
         )
         # self.final_layer = []
 
@@ -272,9 +282,9 @@ resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
                152: (Bottleneck, [3, 8, 36, 3])}
 
 
-def get_pose_net(num_layers, heads, head_conv):
+def get_pose_net(num_layers, heads, head_conv, down_ratio=4):
   block_class, layers = resnet_spec[num_layers]
 
-  model = PoseResNet(block_class, layers, heads, head_conv=head_conv)
+  model = PoseResNet(block_class, layers, heads, head_conv=head_conv, down_ratio=down_ratio)
   model.init_weights(num_layers, pretrained=True)
   return model
