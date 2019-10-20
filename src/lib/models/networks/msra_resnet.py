@@ -105,6 +105,48 @@ class Bottleneck(nn.Module):
         return out
 
 
+class FPN(nn.Module):
+    def __init__(self, inplanes, num_layers, num_filters, num_kernels, stage_filters):
+        super(FPN, self).__init__()
+        assert num_layers == len(num_filters), \
+            'ERROR: num_deconv_layers is different len(num_deconv_filters)'
+        assert num_layers == len(num_kernels), \
+            'ERROR: num_deconv_layers is different len(num_deconv_filters)'
+
+        self.num_layers = num_layers
+        self.layers = nn.ModuleList()
+        for i in range(num_layers):
+            kernel, padding, output_padding = \
+                PoseResNet._get_deconv_cfg(num_kernels[i], i)
+
+            planes = num_filters[i]
+            self.layers.append(nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels=inplanes,
+                    out_channels=planes,
+                    kernel_size=kernel,
+                    stride=2,
+                    padding=padding,
+                    output_padding=output_padding,
+                    bias=False),
+                nn.BatchNorm2d(planes, momentum=BN_MOMENTUM),
+                nn.ReLU(inplace=True)))
+            inplanes = planes
+
+        self.nodes = nn.ModuleList()
+        for i in range(num_layers):
+            planes = num_filters[i]
+            self.nodes.append(nn.Sequential(nn.Conv2d(planes+stage_filters[i], planes, 1, bias=False),
+                                            nn.BatchNorm2d(planes, momentum=BN_MOMENTUM),
+                                            nn.ReLU(inplace=True)))
+
+    def forward(self, x, stage):
+        for i in range(self.num_layers):
+            x = self.layers[i](x)
+            x = self.nodes[i](torch.cat([x,stage[i]],dim=1))
+        return x
+
+
 class PoseResNet(nn.Module):
 
     def __init__(self, block, layers, heads, head_conv, down_ratio=4):
@@ -126,6 +168,7 @@ class PoseResNet(nn.Module):
         up_num = int(math.log2(32 / down_ratio))
         fliters = [256, 256, 256, 256]
         kernels = [4, 4, 4, 4]
+        stages = [256, 128, 64, 64]
 
         # used for deconv layers
         # self.deconv_layers = self._make_deconv_layer(
@@ -133,11 +176,12 @@ class PoseResNet(nn.Module):
         #     [256, 128, 64],
         #     [4, 4, 4],
         # )
-        self.deconv_layers = self._make_deconv_layer(
-            up_num,
-            fliters[:up_num],
-            kernels[:up_num],
-        )
+        # self.deconv_layers = self._make_deconv_layer(
+        #     up_num,
+        #     fliters[:up_num],
+        #     kernels[:up_num],
+        # )
+        self.deconv_layers = FPN(self.inplanes, up_num, fliters[:up_num], kernels[:up_num], stages[:up_num])
         # self.final_layer = []
 
         for head in sorted(self.heads):
@@ -178,7 +222,8 @@ class PoseResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def _get_deconv_cfg(self, deconv_kernel, index):
+    @staticmethod
+    def _get_deconv_cfg(deconv_kernel, index):
         if deconv_kernel == 4:
             padding = 1
             output_padding = 0
@@ -222,14 +267,19 @@ class PoseResNet(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+        stage = [x]
         x = self.maxpool(x)
 
         x = self.layer1(x)
+        stage.insert(0, x)
         x = self.layer2(x)
+        stage.insert(0, x)
         x = self.layer3(x)
+        stage.insert(0, x)
         x = self.layer4(x)
 
-        x = self.deconv_layers(x)
+        # x = self.deconv_layers(x)
+        x = self.deconv_layers(x, stage)
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)

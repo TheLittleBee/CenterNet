@@ -77,7 +77,8 @@ def detect(opt):
             cls_id = np.ones((len(det), 1), dtype=np.float32) * (cls - 1)
             dets = np.append(dets, np.hstack((det, cls_id)), 0)
             for d in det:
-                debugger.add_coco_bbox(d[:4], cls-1, d[-1], img_id=img_name)
+                if d[-1] >= opt.vis_thresh:
+                    debugger.add_coco_bbox(d[:4], cls-1, d[-1], img_id=img_name)
         np.savetxt(path, dets)
     bar.finish()
     debugger.save_all_imgs(path=dir_path)
