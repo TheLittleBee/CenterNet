@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 from .DCNv2.dcn_v2 import DCN
 import torch.utils.model_zoo as model_zoo
+from .pose_dla_dcn import IDAUp
 
 BN_MOMENTUM = 0.1
 logger = logging.getLogger(__name__)
@@ -175,10 +176,12 @@ class FPN(nn.Module):
                                             nn.ReLU(inplace=True)))
 
     def forward(self, x, stage):
+        layers = [x]
         for i in range(self.num_layers):
             x = self.layers[i](x)
             x = self.nodes[i](torch.cat([x,stage[i]], dim=1))
-        return x
+            layers.insert(0, x)
+        return layers
 
 class PoseResNet(nn.Module):
 
@@ -215,12 +218,14 @@ class PoseResNet(nn.Module):
         #     kernels[:up_num],
         # )
         self.deconv_layers = FPN(self.inplanes, up_num, fliters[:up_num], kernels[:up_num], stages[:up_num])
+        self.ida_up = IDAUp(fliters[up_num - 1], fliters[:up_num][::-1] + [512],
+                            [2 ** i for i in range(up_num + 1)])
 
         for head in self.heads:
             classes = self.heads[head]
             if head_conv > 0:
                 fc = nn.Sequential(
-                  nn.Conv2d(64, head_conv,
+                  nn.Conv2d(fliters[up_num-1], head_conv,
                     kernel_size=3, padding=1, bias=True),
                   nn.ReLU(inplace=True),
                   nn.Conv2d(head_conv, classes, 
@@ -231,7 +236,7 @@ class PoseResNet(nn.Module):
                 else:
                     fill_fc_weights(fc)
             else:
-                fc = nn.Conv2d(64, classes, 
+                fc = nn.Conv2d(fliters[up_num-1], classes,
                   kernel_size=1, stride=1, 
                   padding=0, bias=True)
                 if 'hm' in head:
@@ -326,7 +331,9 @@ class PoseResNet(nn.Module):
         x = self.layer4(x)
 
         # x = self.deconv_layers(x)
-        x = self.deconv_layers(x, stage)
+        layers = self.deconv_layers(x, stage)
+        # x = layers[0]
+        x = self.ida_up(layers, 0, len(layers))
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)

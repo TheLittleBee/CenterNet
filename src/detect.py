@@ -44,7 +44,7 @@ def detect(opt):
             if not os.path.exists(dir_path):
                 os.mkdir(dir_path)
             with open(opt.image, 'r') as f:
-                images.extend([l.rstrip() for l in f.readlines()])
+                images.extend([l.rstrip().replace('.txt', '.jpg') for l in f.readlines()])
         elif os.path.splitext(opt.image)[1] in ['.jpg', '.png', '.bmp']:
             images.append(opt.image)
         else:
@@ -70,7 +70,21 @@ def detect(opt):
         bar.next()
 
         img_name = os.path.splitext(os.path.basename(img_id))[0]
-        debugger.add_img(cv2.imread(img_id), img_id=img_name)
+        img = cv2.imread(img_id)
+        h, w = img.shape[:2]
+        debugger.add_img(img, img_id=img_name)
+        gt = np.loadtxt(img_id.replace('.jpg', '.txt')).reshape(-1, 5)
+        if gt.size:
+            x1 = w * (gt[:, 1] - gt[:, 3] / 2)
+            y1 = h * (gt[:, 2] - gt[:, 4] / 2)
+            x2 = w * (gt[:, 1] + gt[:, 3] / 2)
+            y2 = h * (gt[:, 2] + gt[:, 4] / 2)
+            gt[:, 1] = x1
+            gt[:, 2] = y1
+            gt[:, 3] = x2
+            gt[:, 4] = y2
+            for g in gt:
+                debugger.add_gt_bbox(g, img_id=img_name)
         path = os.path.join(dir_path, os.path.basename(img_id).replace('.jpg', '.txt'))
         dets = np.zeros((0, 6), dtype=np.float32)
         for cls, det in ret['results'].items():

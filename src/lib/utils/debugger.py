@@ -191,6 +191,21 @@ class Debugger(object):
       cv2.putText(self.imgs[img_id], txt, (bbox[0], bbox[1] - 2), 
                   font, 0.5, (0, 0, 0), thickness=1, lineType=cv2.LINE_AA)
 
+  def add_gt_bbox(self, bbox, show_txt=True, img_id='default', color=(0, 0, 255)):
+    cat = int(bbox[0])
+    bbox = np.array(bbox[1:], dtype=np.int32)
+    txt = '{}'.format(self.names[cat])
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cat_size = cv2.getTextSize(txt, font, 0.5, 2)[0]
+    cv2.rectangle(
+      self.imgs[img_id], (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
+    if show_txt:
+      cv2.rectangle(self.imgs[img_id],
+                    (bbox[0], bbox[1] - cat_size[1] - 2),
+                    (bbox[0] + cat_size[0], bbox[1] - 2), color, -1)
+      cv2.putText(self.imgs[img_id], txt, (bbox[0], bbox[1] - 2),
+                  font, 0.5, (0, 0, 0), thickness=1, lineType=cv2.LINE_AA)
+
   def add_coco_hp(self, points, img_id='default'): 
     points = np.array(points, dtype=np.int32).reshape(self.num_joints, 2)
     for j in range(self.num_joints):

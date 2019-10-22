@@ -10,6 +10,7 @@ from utils.image import get_affine_transform, affine_transform
 from utils.image import gaussian_radius, draw_umich_gaussian, draw_msra_gaussian
 from utils.image import draw_dense_reg
 import math
+import warnings
 
 import torch.utils.data as data
 
@@ -52,15 +53,18 @@ class YOLO(data.Dataset):
         img = cv2.imread(img_id)
         height, width = img.shape[0], img.shape[1]
         # YOLO标注转换
-        anns = np.loadtxt(self.anno[index]).reshape(-1, 5)
-        x1 = width * (anns[:, 1] - anns[:, 3] / 2)
-        y1 = height * (anns[:, 2] - anns[:, 4] / 2)
-        x2 = width * (anns[:, 1] + anns[:, 3] / 2)
-        y2 = height * (anns[:, 2] + anns[:, 4] / 2)
-        anns[:, 1] = x1
-        anns[:, 2] = y1
-        anns[:, 3] = x2
-        anns[:, 4] = y2
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            anns = np.loadtxt(self.anno[index]).reshape(-1, 5)
+        if anns.size:
+            x1 = width * (anns[:, 1] - anns[:, 3] / 2)
+            y1 = height * (anns[:, 2] - anns[:, 4] / 2)
+            x2 = width * (anns[:, 1] + anns[:, 3] / 2)
+            y2 = height * (anns[:, 2] + anns[:, 4] / 2)
+            anns[:, 1] = x1
+            anns[:, 2] = y1
+            anns[:, 3] = x2
+            anns[:, 4] = y2
         num_objs = min(len(anns), self.max_objs)
 
         # 数据变换

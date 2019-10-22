@@ -188,14 +188,14 @@ class PoseResNet(nn.Module):
           num_output = self.heads[head]
           if head_conv > 0:
             fc = nn.Sequential(
-                nn.Conv2d(256, head_conv,
+                nn.Conv2d(fliters[up_num-1], head_conv,
                   kernel_size=3, padding=1, bias=True),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(head_conv, num_output, 
                   kernel_size=1, stride=1, padding=0))
           else:
             fc = nn.Conv2d(
-              in_channels=256,
+              in_channels=fliters[up_num-1],
               out_channels=num_output,
               kernel_size=1,
               stride=1,
