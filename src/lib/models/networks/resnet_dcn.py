@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from .DCNv2.dcn_v2 import DCN
 import torch.utils.model_zoo as model_zoo
-from .pose_dla_dcn import IDAUp
+# from .pose_dla_dcn import IDAUp
 
 BN_MOMENTUM = 0.1
 logger = logging.getLogger(__name__)
@@ -218,8 +218,8 @@ class PoseResNet(nn.Module):
         #     kernels[:up_num],
         # )
         self.deconv_layers = FPN(self.inplanes, up_num, fliters[:up_num], kernels[:up_num], stages[:up_num])
-        self.ida_up = IDAUp(fliters[up_num - 1], fliters[:up_num][::-1] + [512],
-                            [2 ** i for i in range(up_num + 1)])
+        # self.ida_up = IDAUp(fliters[up_num - 1], fliters[:up_num][::-1] + [512],
+        #                     [2 ** i for i in range(up_num + 1)])
 
         for head in self.heads:
             classes = self.heads[head]
@@ -332,8 +332,9 @@ class PoseResNet(nn.Module):
 
         # x = self.deconv_layers(x)
         layers = self.deconv_layers(x, stage)
-        # x = layers[0]
-        x = self.ida_up(layers, 0, len(layers))
+        x = layers[0]
+        # self.ida_up(layers, 0, len(layers))
+        # x = layers[-1]
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)

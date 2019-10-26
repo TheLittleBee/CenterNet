@@ -66,12 +66,15 @@ def detect(opt):
 
         for t in avg_time_stats:
             avg_time_stats[t].update(ret[t])
-            Bar.suffix = Bar.suffix + '|{} {:.3f} '.format(t, avg_time_stats[t].avg)
+            Bar.suffix = Bar.suffix + '|{} {tm.val:.3f}s ({tm.avg:.3f}s) '.format(
+                t, tm=avg_time_stats[t])
         bar.next()
 
         img_name = os.path.splitext(os.path.basename(img_id))[0]
         img = cv2.imread(img_id)
         h, w = img.shape[:2]
+        pred = debugger.gen_colormap(ret['output']['hm'][0].detach().cpu().numpy())
+        debugger.add_blend_img(img, pred, img_name+'pred_hm')
         debugger.add_img(img, img_id=img_name)
         gt = np.loadtxt(img_id.replace('.jpg', '.txt')).reshape(-1, 5)
         if gt.size:

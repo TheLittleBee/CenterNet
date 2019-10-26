@@ -14,6 +14,16 @@ from .utils import _tranpose_and_gather_feat
 import torch.nn.functional as F
 
 
+def _penalty_focal_loss(pred, gt):
+  num_pos = gt.eq(1).sum().float()
+  loss = - torch.pow(gt, 4) * torch.pow(1 - pred, 2) * torch.log(pred) \
+         - torch.pow(1 - gt, 4) * torch.pow(pred, 2) * torch.log(1 - pred)
+  loss = loss.sum()
+  if num_pos:
+    return loss / num_pos
+  return loss
+
+
 def _slow_neg_loss(pred, gt):
   '''focal loss from CornerNet'''
   pos_inds = gt.eq(1)
@@ -115,7 +125,8 @@ class FocalLoss(nn.Module):
   '''nn.Module warpper for focal loss'''
   def __init__(self):
     super(FocalLoss, self).__init__()
-    self.neg_loss = _neg_loss
+    # self.neg_loss = _neg_loss
+    self.neg_loss = _penalty_focal_loss
 
   def forward(self, out, target):
     return self.neg_loss(out, target)
