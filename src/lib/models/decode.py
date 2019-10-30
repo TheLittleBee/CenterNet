@@ -461,12 +461,13 @@ def ddd_decode(heat, rot, depth, dim, wh=None, reg=None, K=40):
       
     return detections
 
-def ctdet_decode(heat, wh, reg=None, cat_spec_wh=False, K=100):
+def ctdet_decode(heat, wh, reg=None, obj=None, cat_spec_wh=False, K=100):
     batch, cat, height, width = heat.size()
 
     # heat = torch.sigmoid(heat)
     # perform nms on heatmaps
     heat = _nms(heat)
+    if obj is not None: heat = heat * obj
       
     scores, inds, clses, ys, xs = _topk(heat, K=K)
     if reg is not None:

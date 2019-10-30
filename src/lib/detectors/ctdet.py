@@ -31,13 +31,15 @@ class CtdetDetector(BaseDetector):
       hm = output['hm'].sigmoid_()
       wh = output['wh']
       reg = output['reg'] if self.opt.reg_offset else None
+      obj = output['obj'].sigmoid_() if self.opt.reg_obj else None
       if self.opt.flip_test:
         hm = (hm[0:1] + flip_tensor(hm[1:2])) / 2
         wh = (wh[0:1] + flip_tensor(wh[1:2])) / 2
         reg = reg[0:1] if reg is not None else None
+        obj = (obj[0]+flip_tensor(obj[1])) / 2 if obj is not None else None
       torch.cuda.synchronize()
       forward_time = time.time()
-      dets = ctdet_decode(hm, wh, reg=reg, cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
+      dets = ctdet_decode(hm, wh, reg=reg, obj=obj, cat_spec_wh=self.opt.cat_spec_wh, K=self.opt.K)
       
     if return_time:
       return output, dets, forward_time

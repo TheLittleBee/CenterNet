@@ -130,6 +130,7 @@ class YOLO(data.Dataset):
         trans_output = get_affine_transform(c, s, rotation, [output_w, output_h])
 
         hm = np.zeros((num_classes, output_h, output_w), dtype=np.float32)
+        obj = np.zeros((output_h, output_w), dtype=np.float32)
         wh = np.zeros((self.max_objs, 2), dtype=np.float32)
         dense_wh = np.zeros((2, output_h, output_w), dtype=np.float32)
         reg = np.zeros((self.max_objs, 2), dtype=np.float32)
@@ -159,9 +160,10 @@ class YOLO(data.Dataset):
             bbox[[1, 3]] = np.clip(bbox[[1, 3]], 0, output_h - 1)
             h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
             if h > 0 and w > 0:
+                obj[int(bbox[1]):int(bbox[3])+1, int(bbox[0]):int(bbox[2])+1] = 1
                 radius = gaussian_radius((math.ceil(h), math.ceil(w)))
                 radius = max(0, int(radius))
-                radius = self.opt.hm_gauss if self.opt.mse_loss else radius
+                radius = 2*radius/3 if self.opt.mse_loss else radius
                 ct = np.array(
                     [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], dtype=np.float32)
                 ct_int = ct.astype(np.int32)
@@ -188,6 +190,8 @@ class YOLO(data.Dataset):
             del ret['wh']
         if self.opt.reg_offset:
             ret.update({'reg': reg})
+        if self.opt.reg_obj:
+            ret.update({'obj': obj[np.newaxis]})
         if self.opt.debug > 0 or not self.split == 'train':
             gt_det = np.array(gt_det, dtype=np.float32) if len(gt_det) > 0 else \
                 np.zeros((1, 6), dtype=np.float32)

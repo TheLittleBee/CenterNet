@@ -125,8 +125,8 @@ class FocalLoss(nn.Module):
   '''nn.Module warpper for focal loss'''
   def __init__(self):
     super(FocalLoss, self).__init__()
-    # self.neg_loss = _neg_loss
-    self.neg_loss = _penalty_focal_loss
+    self.neg_loss = _neg_loss
+    # self.neg_loss = _penalty_focal_loss
 
   def forward(self, out, target):
     return self.neg_loss(out, target)
@@ -193,6 +193,17 @@ class L1Loss(nn.Module):
     pred = _tranpose_and_gather_feat(output, ind)
     mask = mask.unsqueeze(2).expand_as(pred).float()
     loss = F.l1_loss(pred * mask, target * mask, reduction='elementwise_mean')
+    return loss
+
+class MSELoss(nn.Module):
+  def __init__(self):
+    super(MSELoss, self).__init__()
+
+  def forward(self, out, target):
+    loss = F.mse_loss(out, target, reduction='sum')
+    num_pos = target.eq(1).sum().float()
+    if num_pos:
+      loss = loss / num_pos
     return loss
 
 class BinRotLoss(nn.Module):
