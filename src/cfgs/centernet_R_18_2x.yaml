@@ -1,0 +1,6 @@
+id: "yolo_res18_2x"
+
+model:
+  arch: "res_18"
+  head_conv: 64
+  filters: [256, 128, 64, 64]
