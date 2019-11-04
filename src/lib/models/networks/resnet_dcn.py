@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from .DCNv2.dcn_v2 import DCN
 import torch.utils.model_zoo as model_zoo
-# from .pose_dla_dcn import IDAUp
+from .pose_dla_dcn import IDAUp
 
 BN_MOMENTUM = 0.1
 logger = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ class FPN(nn.Module):
             fc = DCN(inplanes, planes,
                      kernel_size=(3, 3), stride=1,
                      padding=1, dilation=1, deformable_groups=1)
-            # fc = nn.Conv2d(self.inplanes, planes,
+            # fc = nn.Conv2d(inplanes, planes,
             #         kernel_size=3, stride=1,
             #         padding=1, dilation=1, bias=False)
             # fill_fc_weights(fc)
@@ -218,8 +218,8 @@ class PoseResNet(nn.Module):
         #     kernels[:up_num],
         # )
         self.deconv_layers = FPN(self.inplanes, up_num, fliters[:up_num], kernels[:up_num], stages[:up_num])
-        # self.ida_up = IDAUp(fliters[up_num - 1], fliters[:up_num][::-1] + [512],
-        #                     [2 ** i for i in range(up_num + 1)])
+        self.ida_up = IDAUp(fliters[up_num - 1], fliters[:up_num][::-1] + [512],
+                            [2 ** i for i in range(up_num + 1)])
 
         for head in self.heads:
             classes = self.heads[head]
@@ -332,9 +332,9 @@ class PoseResNet(nn.Module):
 
         # x = self.deconv_layers(x)
         layers = self.deconv_layers(x, stage)
-        x = layers[0]
-        # self.ida_up(layers, 0, len(layers))
-        # x = layers[-1]
+        # x = layers[0]
+        self.ida_up(layers, 0, len(layers))
+        x = layers[-1]
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)
