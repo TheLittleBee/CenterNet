@@ -5,10 +5,11 @@ import os
 __all__ = ['get_cfg', 'parse_args']
 
 
-class Cfg():
+class Cfg(object):
     def __init__(self):
-        self.id = ''
+        self.id = 'yolo_resdcn34_fpn_obj_s2_2x'
         self.save_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'exp', 'ctdet')
+        self.model_cfg = 'centernet_RD_34_fpn_obj_s2_2x.yaml'
         self.model = dict()
         self.datasets = dict()
         self.trainer = dict()
@@ -20,7 +21,8 @@ class Cfg():
         self.__dict__.update(self.trainer)
         self.__dict__.update(self.tester)
 
-    def merge_from_file(self, file):
+    def merge_from_file(self):
+        file = os.path.join(os.path.dirname(__file__), '..', '..', 'cfgs', self.model_cfg)
         with open(file, 'r') as fp:
             loaded_cfg = yaml.load(fp)
         self.id = loaded_cfg['id']
@@ -41,11 +43,13 @@ class Cfg():
     def update_dict(self, args):
         for k, v in vars(args).items():
             if v == '' or not hasattr(self, k): continue
-            if k == 'gpus': setattr(self, 'gpus_str', v)
             setattr(self, k, self.transtype_a2b(v, getattr(self, k)))
 
     def setup_head(self, dataset):
-        num_classes = dataset.num_classes
+        if isinstance(dataset, int):
+            num_classes = dataset
+        else:
+            num_classes = dataset.num_classes
         heads = {'hm': num_classes, 'wh': 2 if not self.cat_spec_wh else 2 * num_classes}
         if self.reg_offset:
             heads.update({'reg': 2})
