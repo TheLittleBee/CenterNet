@@ -69,14 +69,16 @@ class CtdetLoss(torch.nn.Module):
         off_loss += self.crit_reg(output['reg'], batch['reg_mask'],
                              batch['ind'], batch['reg']) / opt.num_stacks
 
-      if opt.reg_obj:
+      if opt.reg_obj and opt.obj_weight:
         output['obj'] = _sigmoid(output['obj'])
         obj_loss += self.crit_obj(output['obj'], batch['obj']) / opt.num_stacks
         
     loss = opt.hm_weight * hm_loss + opt.wh_weight * wh_loss + \
-           opt.off_weight * off_loss + obj_loss
+           opt.off_weight * off_loss + opt.obj_weight * obj_loss
     loss_stats = {'loss': loss, 'hm_loss': hm_loss,
-                  'wh_loss': wh_loss, 'off_loss': off_loss, 'obj_loss': obj_loss}
+                  'wh_loss': wh_loss}
+    if opt.reg_offset: loss_stats['off_loss'] = off_loss
+    if opt.reg_obj: loss_stats['obj_loss'] = obj_loss
     return loss, loss_stats
 
 class CtdetTrainer(BaseTrainer):
@@ -84,7 +86,8 @@ class CtdetTrainer(BaseTrainer):
     super(CtdetTrainer, self).__init__(opt, model, optimizer=optimizer)
   
   def _get_losses(self, opt):
-    loss_states = ['loss', 'hm_loss', 'wh_loss', 'off_loss']
+    loss_states = ['loss', 'hm_loss', 'wh_loss']
+    if opt.reg_offset: loss_states += ['off_loss']
     if opt.reg_obj: loss_states += ['obj_loss']
     loss = CtdetLoss(opt)
     return loss_states, loss
