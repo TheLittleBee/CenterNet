@@ -12,14 +12,20 @@ from __future__ import print_function
 import os
 import math
 import logging
+import numpy as np
 
 import torch
 import torch.nn as nn
 from .DCNv2.dcn_v2 import DCN
 import torch.utils.model_zoo as model_zoo
-from .pose_dla_dcn import IDAUp
 
 BN_MOMENTUM = 0.1
+BN = BN_type = nn.BatchNorm2d
+# BN = BN_type = nn.SyncBatchNorm
+# def BN(channel, momentum=0.1):
+#     return nn.GroupNorm(32, channel)
+# BN_type = nn.GroupNorm
+
 logger = logging.getLogger(__name__)
 
 model_urls = {
@@ -42,10 +48,10 @@ class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes, momentum=BN_MOMENTUM)
+        self.bn1 = BN(planes, momentum=BN_MOMENTUM)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes, momentum=BN_MOMENTUM)
+        self.bn2 = BN(planes, momentum=BN_MOMENTUM)
         self.downsample = downsample
         self.stride = stride
 
@@ -74,13 +80,13 @@ class Bottleneck(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes, momentum=BN_MOMENTUM)
+        self.bn1 = BN(planes, momentum=BN_MOMENTUM)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes, momentum=BN_MOMENTUM)
+        self.bn2 = BN(planes, momentum=BN_MOMENTUM)
         self.conv3 = nn.Conv2d(planes, planes * self.expansion, kernel_size=1,
                                bias=False)
-        self.bn3 = nn.BatchNorm2d(planes * self.expansion,
+        self.bn3 = BN(planes * self.expansion,
                                   momentum=BN_MOMENTUM)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
@@ -117,13 +123,13 @@ def fill_up_weights(up):
             w[0, 0, i, j] = \
                 (1 - math.fabs(i / f - c)) * (1 - math.fabs(j / f - c))
     for c in range(1, w.size(0)):
-        w[c, 0, :, :] = w[0, 0, :, :] 
+        w[c, 0, :, :] = w[0, 0, :, :]
 
 def fill_fc_weights(layers):
     for m in layers.modules():
         if isinstance(m, nn.Conv2d):
-            nn.init.normal_(m.weight, std=0.001)
-            # torch.nn.init.kaiming_normal_(m.weight.data, nonlinearity='relu')
+            # nn.init.normal_(m.weight, std=0.001)
+            torch.nn.init.kaiming_normal_(m.weight.data, nonlinearity='relu')
             # torch.nn.init.xavier_normal_(m.weight.data)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
@@ -161,19 +167,21 @@ class FPN(nn.Module):
             fill_up_weights(up)
 
             self.layers.append(nn.Sequential(fc,
-                                             nn.BatchNorm2d(planes, momentum=BN_MOMENTUM),
+                                             BN(planes, momentum=BN_MOMENTUM),
                                              nn.ReLU(inplace=True),
                                              up,
-                                             nn.BatchNorm2d(planes, momentum=BN_MOMENTUM),
+                                             BN(planes, momentum=BN_MOMENTUM),
                                              nn.ReLU(inplace=True)))
             inplanes = planes
 
         self.nodes = nn.ModuleList()
         for i in range(num_layers):
             planes = num_filters[i]
-            self.nodes.append(nn.Sequential(nn.Conv2d(planes+stage_filters[i], planes, 1, bias=False),
-                                            nn.BatchNorm2d(planes, momentum=BN_MOMENTUM),
-                                            nn.ReLU(inplace=True)))
+            fc = nn.Sequential(nn.Conv2d(planes+stage_filters[i], planes, 1, bias=False),
+                                            BN(planes, momentum=BN_MOMENTUM),
+                                            nn.ReLU(inplace=True))
+            fill_fc_weights(fc)
+            self.nodes.append(fc)
 
     def forward(self, x, stage):
         layers = [x]
@@ -183,28 +191,87 @@ class FPN(nn.Module):
             layers.insert(0, x)
         return layers
 
+
+class IDAUp(nn.Module):
+
+    def __init__(self, o, channels, up_f):
+        super(IDAUp, self).__init__()
+        self.index = [0, (len(channels) - 1) // 2, len(channels) - 1]
+        # for i in range(1, len(channels)):
+        for i in self.index[1:]:
+            c = channels[i]
+            f = int(up_f[i])
+            fc = DCN(c, o,
+                     kernel_size=(3, 3), stride=1,
+                     padding=1, dilation=1, deformable_groups=1)
+            # fc = nn.Conv2d(c, o,
+            #         kernel_size=3, stride=1,
+            #         padding=1, dilation=1, bias=False)
+            # fill_fc_weights(fc)
+            proj = nn.Sequential(fc,
+                                 BN(o, momentum=BN_MOMENTUM),
+                                 nn.ReLU(inplace=True))
+            fc = DCN(o, o,
+                     kernel_size=(3, 3), stride=1,
+                     padding=1, dilation=1, deformable_groups=1)
+            # fc = nn.Conv2d(o, o,
+            #         kernel_size=3, stride=1,
+            #         padding=1, dilation=1, bias=False)
+            # fill_fc_weights(fc)
+            node = nn.Sequential(fc,
+                                 BN(o, momentum=BN_MOMENTUM),
+                                 nn.ReLU(inplace=True))
+
+            # up = nn.ConvTranspose2d(o, o, f * 2, stride=f,
+            #                         padding=f // 2, output_padding=0,
+            #                         groups=o, bias=False)
+            # fill_up_weights(up)
+            up = []
+            for _ in range(int(math.log2(f))):
+                layer = nn.ConvTranspose2d(o, o, 4, stride=2, padding=1, output_padding=0, groups=o, bias=False)
+                fill_up_weights(layer)
+                up.append(layer)
+            up = nn.Sequential(*up)
+
+            setattr(self, 'proj_' + str(i), proj)
+            setattr(self, 'up_' + str(i), up)
+            setattr(self, 'node_' + str(i), node)
+
+    def forward(self, layers, startp, endp):
+        # for i in range(startp + 1, endp):
+        for id, i in enumerate(self.index[1:]):
+            upsample = getattr(self, 'up_' + str(i - startp))
+            project = getattr(self, 'proj_' + str(i - startp))
+            layers[i] = upsample(project(layers[i]))
+            node = getattr(self, 'node_' + str(i - startp))
+            # layers[i] = node(layers[i] + layers[i - 1])
+            layers[i] = node(layers[i] + layers[self.index[id]])
+
 class PoseResNet(nn.Module):
 
-    def __init__(self, block, layers, heads, head_conv, down_ratio=4):
+    def __init__(self, block, layers, heads, head_conv, down_ratio=4, width_factor=1.):
         assert down_ratio in [2, 4, 8, 16]
-        self.inplanes = 64
         self.heads = heads
         self.deconv_with_bias = False
+        if isinstance(width_factor, float):
+            width_factor = [width_factor] * 5
+        assert len(width_factor) == 5
+        self.inplanes = int(64 * width_factor[0])
 
         super(PoseResNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
                                bias=False)
-        self.bn1 = nn.BatchNorm2d(64, momentum=BN_MOMENTUM)
+        self.bn1 = BN(self.inplanes, momentum=BN_MOMENTUM)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        self.layer1 = self._make_layer(block, 64, layers[0], factor=width_factor[1])
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2, factor=width_factor[2])
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=2, factor=width_factor[3])
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2, factor=width_factor[4])
         up_num = int(math.log2(32 / down_ratio))
-        fliters = [256, 128, 64, 64]
+        fliters = [int(f * block.expansion * width_factor[3-i]) for i, f in enumerate([256, 128, 64, 64])]
         kernels = [4, 4, 4, 4]
-        stages = [256, 128, 64, 64]
+        stages = [int(f * block.expansion * width_factor[3-i]) for i, f in enumerate([256, 128, 64, 64])]
 
         # used for deconv layers
         # self.deconv_layers = self._make_deconv_layer(
@@ -218,9 +285,10 @@ class PoseResNet(nn.Module):
         #     kernels[:up_num],
         # )
         self.deconv_layers = FPN(self.inplanes, up_num, fliters[:up_num], kernels[:up_num], stages[:up_num])
-        self.ida_up = IDAUp(fliters[up_num - 1], fliters[:up_num][::-1] + [512],
-                            [2 ** i for i in range(up_num + 1)])
+        # self.ida_up = IDAUp(fliters[up_num - 1], fliters[:up_num][::-1] + [int(512 * block.expansion * width_factor[-1])],
+        #                     [2 ** i for i in range(up_num + 1)])
 
+        head_conv = int(head_conv * width_factor[-1])
         for head in self.heads:
             classes = self.heads[head]
             if head_conv > 0:
@@ -228,8 +296,8 @@ class PoseResNet(nn.Module):
                   nn.Conv2d(fliters[up_num-1], head_conv,
                     kernel_size=3, padding=1, bias=True),
                   nn.ReLU(inplace=True),
-                  nn.Conv2d(head_conv, classes, 
-                    kernel_size=1, stride=1, 
+                  nn.Conv2d(head_conv, classes,
+                    kernel_size=1, stride=1,
                     padding=0, bias=True))
                 if 'hm' in head or 'obj' in head:
                     fc[-1].bias.data.fill_(-2.19)
@@ -237,7 +305,7 @@ class PoseResNet(nn.Module):
                     fill_fc_weights(fc)
             else:
                 fc = nn.Conv2d(fliters[up_num-1], classes,
-                  kernel_size=1, stride=1, 
+                  kernel_size=1, stride=1,
                   padding=0, bias=True)
                 if 'hm' in head or 'obj' in head:
                     fc.bias.data.fill_(-2.19)
@@ -245,13 +313,14 @@ class PoseResNet(nn.Module):
                     fill_fc_weights(fc)
             self.__setattr__(head, fc)
 
-    def _make_layer(self, block, planes, blocks, stride=1):
+    def _make_layer(self, block, planes, blocks, stride=1, factor=1.):
         downsample = None
+        planes = int(planes * factor)
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 nn.Conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion, momentum=BN_MOMENTUM),
+                BN(planes * block.expansion, momentum=BN_MOMENTUM),
             )
 
         layers = []
@@ -288,7 +357,7 @@ class PoseResNet(nn.Module):
                 self._get_deconv_cfg(num_kernels[i], i)
 
             planes = num_filters[i]
-            fc = DCN(self.inplanes, planes, 
+            fc = DCN(self.inplanes, planes,
                     kernel_size=(3,3), stride=1,
                     padding=1, dilation=1, deformable_groups=1)
             # fc = nn.Conv2d(self.inplanes, planes,
@@ -306,10 +375,10 @@ class PoseResNet(nn.Module):
             fill_up_weights(up)
 
             layers.append(fc)
-            layers.append(nn.BatchNorm2d(planes, momentum=BN_MOMENTUM))
+            layers.append(BN(planes, momentum=BN_MOMENTUM))
             layers.append(nn.ReLU(inplace=True))
             layers.append(up)
-            layers.append(nn.BatchNorm2d(planes, momentum=BN_MOMENTUM))
+            layers.append(BN(planes, momentum=BN_MOMENTUM))
             layers.append(nn.ReLU(inplace=True))
             self.inplanes = planes
 
@@ -332,23 +401,32 @@ class PoseResNet(nn.Module):
 
         # x = self.deconv_layers(x)
         layers = self.deconv_layers(x, stage)
-        # x = layers[0]
-        self.ida_up(layers, 0, len(layers))
-        x = layers[-1]
+        x = layers[0]
+        # self.ida_up(layers, 0, len(layers))
+        # x = layers[-1]
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)
         return [ret]
 
-    def init_weights(self, num_layers):
-        if 1:
+    def init_weights(self, num_layers, pretrained=True):
+        if pretrained:
             url = model_urls['resnet{}'.format(num_layers)]
             pretrained_state_dict = model_zoo.load_url(url)
             print('=> loading pretrained model {}'.format(url))
             self.load_state_dict(pretrained_state_dict, strict=False)
             print('=> init deconv weights from normal distribution')
             for name, m in self.deconv_layers.named_modules():
-                if isinstance(m, nn.BatchNorm2d):
+                if isinstance(m, BN_type):
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
+        else:
+            # nn.init.normal_(self.conv1.weight, std=0.001)
+            torch.nn.init.kaiming_normal_(self.conv1.weight.data, nonlinearity='relu')
+            # torch.nn.init.xavier_normal_(self.conv1.weight.data)
+            for i in range(1, 5): fill_fc_weights(getattr(self, 'layer%d'%i))
+            for m in self.modules():
+                if isinstance(m, BN_type):
                     nn.init.constant_(m.weight, 1)
                     nn.init.constant_(m.bias, 0)
 
@@ -360,9 +438,10 @@ resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
                152: (Bottleneck, [3, 8, 36, 3])}
 
 
-def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4):
+def get_pose_net(num_layers, heads, head_conv=256, down_ratio=4, width_factor=1.):
   block_class, layers = resnet_spec[num_layers]
 
-  model = PoseResNet(block_class, layers, heads, head_conv=head_conv, down_ratio=down_ratio)
-  model.init_weights(num_layers)
+  model = PoseResNet(block_class, layers, heads, head_conv=head_conv, down_ratio=down_ratio, width_factor=width_factor)
+  # model.init_weights(num_layers, np.all(np.array(width_factor) == 1))
+  model.init_weights(num_layers, False)
   return model

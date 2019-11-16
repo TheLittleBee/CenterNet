@@ -361,24 +361,16 @@ class IDAUp(nn.Module):
 
     def __init__(self, o, channels, up_f):
         super(IDAUp, self).__init__()
-        self.index = [0, (len(channels)-1)//2, len(channels)-1]
-        # for i in range(1, len(channels)):
-        for i in self.index[1:]:
+        for i in range(1, len(channels)):
             c = channels[i]
             f = int(up_f[i])  
             proj = DeformConv(c, o)
             node = DeformConv(o, o)
      
-            # up = nn.ConvTranspose2d(o, o, f * 2, stride=f,
-            #                         padding=f // 2, output_padding=0,
-            #                         groups=o, bias=False)
-            # fill_up_weights(up)
-            up = []
-            for _ in range(int(math.log2(f))):
-                layer = nn.ConvTranspose2d(o, o, 4, stride=2, padding=1, output_padding=0, groups=o, bias=False)
-                fill_up_weights(layer)
-                up.append(layer)
-            up = nn.Sequential(*up)
+            up = nn.ConvTranspose2d(o, o, f * 2, stride=f,
+                                    padding=f // 2, output_padding=0,
+                                    groups=o, bias=False)
+            fill_up_weights(up)
 
             setattr(self, 'proj_' + str(i), proj)
             setattr(self, 'up_' + str(i), up)
@@ -386,14 +378,12 @@ class IDAUp(nn.Module):
                  
         
     def forward(self, layers, startp, endp):
-        # for i in range(startp + 1, endp):
-        for id, i in enumerate(self.index[1:]):
+        for i in range(startp + 1, endp):
             upsample = getattr(self, 'up_' + str(i - startp))
             project = getattr(self, 'proj_' + str(i - startp))
             layers[i] = upsample(project(layers[i]))
             node = getattr(self, 'node_' + str(i - startp))
-            # layers[i] = node(layers[i] + layers[i - 1])
-            layers[i] = node(layers[i] + layers[self.index[id]])
+            layers[i] = node(layers[i] + layers[i - 1])
 
 
 
