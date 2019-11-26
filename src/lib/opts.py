@@ -62,7 +62,8 @@ class opts(object):
     self.parser.add_argument('--arch', default='dla_34', 
                              help='model architecture. Currently tested'
                                   'res_18 | res_101 | resdcn_18 | resdcn_101 |'
-                                  'dlav0_34 | dla_34 | hourglass')
+                                  'dlav0_34 | dla_34 | hourglass'
+                                  'efficientnet_0~7')
     self.parser.add_argument('--head_conv', type=int, default=-1,
                              help='conv layer channels for output head'
                                   '0 for no conv layer'
@@ -70,6 +71,8 @@ class opts(object):
                                   '64 for resnets and 256 for dla.')
     self.parser.add_argument('--down_ratio', type=int, default=4,
                              help='output stride. Currently supports 2 | 4 | 8 | 16. Except hourglass.')
+    self.parser.add_argument('--extra_kwargs', default='',
+                             help='yaml file for model extra args')
 
     # input
     self.parser.add_argument('--input_res', type=int, default=-1, 
@@ -255,6 +258,7 @@ class opts(object):
 
     if opt.head_conv == -1: # init default head_conv
       opt.head_conv = 256 if 'dla' in opt.arch else 64
+      if 'efficient' in opt.arch: opt.head_conv = 16
     opt.pad = 127 if 'hourglass' in opt.arch else 31
     opt.num_stacks = 2 if opt.arch == 'hourglass' else 1
 

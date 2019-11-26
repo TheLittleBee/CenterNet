@@ -38,7 +38,13 @@ def main(opt):
   opt.device = torch.device('cuda' if opt.gpus[0] >= 0 else 'cpu')
   
   print('Creating model...')
-  model = create_model(opt.arch, opt.heads, opt.head_conv, opt.down_ratio)
+  if not opt.extra_kwargs == '':
+    import yaml
+    with open(opt.extra_kwargs, 'r') as fp:
+      kwargs = yaml.load(fp)
+    model = create_model(opt.arch, opt.heads, opt.head_conv, opt.down_ratio, **kwargs)
+  else:
+    model = create_model(opt.arch, opt.heads, opt.head_conv, opt.down_ratio)
   optimizer = torch.optim.Adam(model.parameters(), opt.lr)
   start_epoch = 0
   if opt.load_model != '':
