@@ -114,7 +114,6 @@ class YOLO(data.Dataset):
             if self.rotation:
                 rotation = np.clip(np.random.randn() * self.rotation, -self.rotation, self.rotation)
 
-
         trans_input = get_affine_transform(
             c, s, rotation, [input_w, input_h])
         inp = cv2.warpAffine(img, trans_input,
@@ -160,10 +159,10 @@ class YOLO(data.Dataset):
             bbox[[1, 3]] = np.clip(bbox[[1, 3]], 0, output_h - 1)
             h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
             if h > 0 and w > 0:
-                obj[int(bbox[1]):int(bbox[3])+1, int(bbox[0]):int(bbox[2])+1] = 1
+                obj[int(bbox[1]):int(bbox[3]) + 1, int(bbox[0]):int(bbox[2]) + 1] = 1
                 radius = gaussian_radius((math.ceil(h), math.ceil(w)))
                 radius = max(0, int(radius))
-                radius = 2*radius/3 if self.opt.mse_loss else radius
+                radius = 2 * radius / 3 if self.opt.mse_loss else radius
                 ct = np.array(
                     [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2], dtype=np.float32)
                 ct_int = ct.astype(np.int32)
@@ -207,6 +206,7 @@ class YOLO(data.Dataset):
             path = os.path.join(dir_path, os.path.basename(k).replace('.jpg', '.txt'))
             dets = np.zeros((0, 6), dtype=np.float32)
             for cls, det in v.items():
+                det = det[det[..., -1] > 0]
                 cls_id = np.ones((len(det), 1), dtype=np.float32) * (cls - 1)
                 dets = np.append(dets, np.hstack((det, cls_id)), 0)
             np.savetxt(path, dets)

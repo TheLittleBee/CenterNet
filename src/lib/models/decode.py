@@ -467,6 +467,8 @@ def ctdet_decode(heat, wh, reg=None, obj=None, cat_spec_wh=False, K=100):
     # heat = torch.sigmoid(heat)
     # perform nms on heatmaps
     heat = _nms(heat)
+    heat = heat*(wh[:,0:1] > 0).float()
+    heat = heat*(wh[:,1:2] > 0).float()
     if obj is not None: heat = heat * obj
       
     scores, inds, clses, ys, xs = _topk(heat, K=K)

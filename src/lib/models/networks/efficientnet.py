@@ -86,6 +86,7 @@ class MBConvBlock(nn.Module):
         x = inputs
         if self._block_args.expand_ratio != 1:
             x = self._swish(self._bn0(self._expand_conv(inputs)))
+        ex = x
         x = self._swish(self._bn1(self._depthwise_conv(x)))
 
         # Squeeze and Excitation
@@ -93,6 +94,7 @@ class MBConvBlock(nn.Module):
             x_squeezed = F.adaptive_avg_pool2d(x, 1)
             x_squeezed = self._se_expand(self._swish(self._se_reduce(x_squeezed)))
             x = torch.sigmoid(x_squeezed) * x
+        # se = x
 
         x = self._bn2(self._project_conv(x))
 
@@ -102,11 +104,12 @@ class MBConvBlock(nn.Module):
             if drop_connect_rate:
                 x = drop_connect(x, p=drop_connect_rate, training=self.training)
             x = x + inputs  # skip connection
-        return x
+        return x, ex
 
-    def set_swish(self, memory_efficient=True):
+    def set_swish(self, memory_efficient=True, relu=False):
         """Sets swish function as memory efficient (for training) or standard (for export)"""
-        self._swish = MemoryEfficientSwish() if memory_efficient else Swish()
+        if relu: self._swish = nn.ReLU(inplace=True)
+        else: self._swish = MemoryEfficientSwish() if memory_efficient else Swish()
 
 
 class EfficientNet(nn.Module):
@@ -167,12 +170,14 @@ class EfficientNet(nn.Module):
         self._bn1 = nn.BatchNorm2d(num_features=out_channels, momentum=bn_mom, eps=bn_eps)
 
         self._swish = MemoryEfficientSwish()
+        self.ex = False
 
-    def set_swish(self, memory_efficient=True):
+    def set_swish(self, memory_efficient=True, relu=False):
         """Sets swish function as memory efficient (for training) or standard (for export)"""
-        self._swish = MemoryEfficientSwish() if memory_efficient else Swish()
+        if relu: self._swish = nn.ReLU(inplace=True)
+        else: self._swish = MemoryEfficientSwish() if memory_efficient else Swish()
         for block in self._blocks:
-            block.set_swish(memory_efficient)
+            block.set_swish(memory_efficient, relu)
 
     def forward(self, inputs):
         """ Returns output of the final convolution layer """
@@ -186,8 +191,10 @@ class EfficientNet(nn.Module):
             drop_connect_rate = self._global_params.drop_connect_rate
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)
-            x = block(x, drop_connect_rate=drop_connect_rate)
-            if features is not None and idx + 1 in getattr(self, 'num_blocks'): features.append(x)
+            x, ex = block(x, drop_connect_rate=drop_connect_rate)
+            if features is not None and idx + 1 in getattr(self, 'num_blocks'):
+                if self.ex: features.append(ex)
+                else: features.append(x)
 
         # Head
         x = self._swish(self._bn1(self._conv_head(x)))
@@ -195,10 +202,11 @@ class EfficientNet(nn.Module):
         if features is not None: return features
         return x
 
-    def get_filters(self, num_blocks=(1, 2, 3, 5, 8)):
+    def get_filters(self, num_blocks=(1, 2, 3, 5, 8), ex=False):
         """
         get channels of features, set layers where features are
         """
+        self.ex = ex
         num_filters = []
         blocks = []
         n_layer = 0
@@ -206,10 +214,14 @@ class EfficientNet(nn.Module):
             blocks.append(n_layer)
             num_filters.append(round_filters(32, self._global_params))
         for i, block_args in enumerate(self._blocks_args):
-            n_layer += round_repeats(block_args.num_repeat, self._global_params)
+            rp = round_repeats(block_args.num_repeat, self._global_params)
+            n_layer += rp
             if i + 1 in num_blocks:
                 blocks.append(n_layer)
-                num_filters.append(round_filters(block_args.output_filters, self._global_params))
+                if ex:
+                    filters = block_args.input_filters if rp == 1 else block_args.output_filters
+                    num_filters.append(round_filters(filters * block_args.expand_ratio, self._global_params))
+                else: num_filters.append(round_filters(block_args.output_filters, self._global_params))
         if 8 in num_blocks:
             blocks.append(n_layer + 1)
             num_filters.append(round_filters(1280, self._global_params))
@@ -256,25 +268,31 @@ class EfficientNet(nn.Module):
 
 
 class PoseEfficientNet(nn.Module):
-    def __init__(self, name, heads, head_conv, down_ratio=4, max_level=5, dcn=True, bottom_up=2, deconv_k=4,
+    def __init__(self, name, heads, head_conv, down_ratio=4, max_level=5, dcn=False, bottom_up=2, deconv_k=4,
                  activation=None, dw_conv=False, skip=False, mode=3):
         super().__init__()
         self.heads = heads
         min_level = int(math.log2(down_ratio)) - 1
         self.backbone = EfficientNet.from_pretrained(name)
+        if activation is not None: self.backbone.set_swish(relu=True)
         activation = MemoryEfficientSwish if activation is None else activation
         num_filters = self.backbone.get_filters()
-
-        self.fpn = MdFPN(num_filters, num_filters[0], min_level, max_level, dcn, bottom_up, deconv_k, BN, activation,
+        out_dim = num_filters[0]
+        # out_dim = 32
+        self.fpn = MdFPN(num_filters, out_dim, min_level, max_level, dcn, bottom_up, deconv_k, BN, activation,
                          dw_conv, skip, mode)
 
+        # self.conv = nn.Sequential(nn.Conv2d(64,out_dim,1,bias=False),
+        #                           BN(out_dim),
+        #                           activation())
+        head_conv = out_dim
         for head in self.heads:
             classes = self.heads[head]
             if head_conv > 0:
                 fc = nn.Sequential(
-                    nn.Conv2d(num_filters[0], head_conv,
+                    nn.Conv2d(out_dim, head_conv,
                               kernel_size=3, padding=1, bias=True),
-                    nn.ReLU(inplace=True),
+                    activation(),
                     nn.Conv2d(head_conv, classes,
                               kernel_size=1, stride=1,
                               padding=0, bias=True))
@@ -283,7 +301,7 @@ class PoseEfficientNet(nn.Module):
                 else:
                     fill_fc_weights(fc)
             else:
-                fc = nn.Conv2d(num_filters[0], classes,
+                fc = nn.Conv2d(out_dim, classes,
                                kernel_size=1, stride=1,
                                padding=0, bias=True)
                 if 'hm' in head or 'obj' in head:
@@ -295,6 +313,7 @@ class PoseEfficientNet(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         x = self.fpn(features)
+        # x = self.conv(x)
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)
