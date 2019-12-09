@@ -10,7 +10,8 @@ import os
 from .networks.msra_resnet import get_pose_net
 from .networks.dlav0 import get_pose_net as get_dlav0
 from .networks.pose_dla_dcn import get_pose_net as get_dla_dcn
-from .networks.resnet_dcn import get_pose_net as get_pose_net_dcn
+# from .networks.resnet_dcn import get_pose_net as get_pose_net_dcn
+from .networks.md_resnet_dcn import get_pose_net as get_pose_net_dcn
 from .networks.large_hourglass import get_large_hourglass_net
 from .networks.efficientnet import get_pose_net as get_efficient_net
 
