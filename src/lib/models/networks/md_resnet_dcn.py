@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from .fpn import *
+from .fcos import FCOSHead
 
 BN = nn.BatchNorm2d
 # BN = nn.SyncBatchNorm
@@ -114,8 +115,8 @@ class Bottleneck(nn.Module):
 
 class PoseResNet(nn.Module):
 
-    def __init__(self, block, layers, heads, head_conv, down_ratio=4, width_factor=1., deconv_k=4, dcn=True,
-                 dw_conv=False, bottom_up=2, skip=False, mode=3):
+    def __init__(self, block, layers, heads, head_conv, down_ratio=4, width_factor=1., deconv_k=4, dcn=False,
+                 dw_conv=False, bottom_up=0, skip=False, mode=1):
         assert down_ratio in [2, 4, 8, 16]
         self.heads = heads
         self.deconv_with_bias = False
@@ -137,36 +138,40 @@ class PoseResNet(nn.Module):
         up_num = int(math.log2(32 / down_ratio))
         filters = [int(f * block.expansion * width_factor[3 - i]) for i, f in enumerate([64, 64, 128, 256, 512])]
 
-        stack = 2
+        stack = 1
+        dims = filters[4-up_num] if isinstance(heads, int) else 0
         # self.fpn = FPN(filters, 0, 4 - up_num, 5, deconv_k, BN, nn.ReLU, dcn, dw_conv, mode)
-        # self.fpn = StackBiFPN(filters, 0, 4 - up_num, 5, stack, BN, nn.ReLU, dw_conv, deconv_k, dcn, skip, bottom_up,
-        #                       mode)
-        self.fpn = MdFPN(filters, 0, 4 - up_num, 5, dcn, bottom_up, deconv_k, BN, nn.ReLU, dw_conv, skip, mode)
+        self.fpn = StackBiFPN(filters, dims, 4 - up_num, 5, stack, BN, nn.ReLU, dw_conv, deconv_k, dcn, skip, bottom_up,
+                              mode)
+        # self.fpn = MdFPN(filters, 0, 4 - up_num, 5, dcn, bottom_up, deconv_k, BN, nn.ReLU, dw_conv, skip, mode)
 
-        head_conv = int(head_conv * width_factor[-1])
-        for head in self.heads:
-            classes = self.heads[head]
-            if head_conv > 0:
-                fc = nn.Sequential(
-                    nn.Conv2d(filters[4 - up_num], head_conv,
-                              kernel_size=3, padding=1, bias=True),
-                    nn.ReLU(inplace=True),
-                    nn.Conv2d(head_conv, classes,
-                              kernel_size=1, stride=1,
-                              padding=0, bias=True))
-                if 'hm' in head or 'obj' in head:
-                    fc[-1].bias.data.fill_(-2.19)
+        if isinstance(heads, int):
+            self.fcos = FCOSHead(dims, heads, head_conv, dcn, False, nn.ReLU, dw_conv, True, True)
+        else:
+            head_conv = int(head_conv * width_factor[-1])
+            for head in self.heads:
+                classes = self.heads[head]
+                if head_conv > 0:
+                    fc = nn.Sequential(
+                        nn.Conv2d(filters[4 - up_num], head_conv,
+                                  kernel_size=3, padding=1, bias=True),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(head_conv, classes,
+                                  kernel_size=1, stride=1,
+                                  padding=0, bias=True))
+                    if 'hm' in head or 'obj' in head:
+                        fc[-1].bias.data.fill_(-2.19)
+                    else:
+                        fill_fc_weights(fc)
                 else:
-                    fill_fc_weights(fc)
-            else:
-                fc = nn.Conv2d(filters[4 - up_num], classes,
-                               kernel_size=1, stride=1,
-                               padding=0, bias=True)
-                if 'hm' in head or 'obj' in head:
-                    fc.bias.data.fill_(-2.19)
-                else:
-                    fill_fc_weights(fc)
-            self.__setattr__(head, fc)
+                    fc = nn.Conv2d(filters[4 - up_num], classes,
+                                   kernel_size=1, stride=1,
+                                   padding=0, bias=True)
+                    if 'hm' in head or 'obj' in head:
+                        fc.bias.data.fill_(-2.19)
+                    else:
+                        fill_fc_weights(fc)
+                self.__setattr__(head, fc)
 
     def _make_layer(self, block, planes, blocks, stride=1, factor=1.):
         downsample = None
@@ -203,8 +208,12 @@ class PoseResNet(nn.Module):
         stage.append(x)
 
         x = self.fpn(stage)
-        # x = x[0]
 
+        if hasattr(self, 'fcos'):
+            ret = self.fcos(x)
+            return [ret]
+
+        x = x[0]
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)
