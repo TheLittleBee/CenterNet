@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from .fpn import *
 from .fcos import FCOSHead
+from .ttfnet import TTFHead
 
 BN = nn.BatchNorm2d
 # BN = nn.SyncBatchNorm
@@ -147,6 +148,8 @@ class PoseResNet(nn.Module):
 
         if isinstance(heads, int):
             self.fcos = FCOSHead(dims, heads, head_conv, dcn, False, nn.ReLU, dw_conv, True, True)
+        elif 'ttf' in heads:
+            self.ttf = TTFHead(filters[4 - up_num], heads['ttf'], head_conv)
         else:
             head_conv = int(head_conv * width_factor[-1])
             for head in self.heads:
@@ -214,6 +217,9 @@ class PoseResNet(nn.Module):
             return [ret]
 
         x = x[0]
+        if hasattr(self, 'ttf'):
+            ret = self.ttf(x)
+            return [ret]
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(x)

@@ -594,3 +594,23 @@ def fcos_decode(cls, reg, stride, centerness=None, K=100):
     detections = torch.cat([bboxes, scores, clses], dim=2)
 
     return detections
+
+
+def ttf_decode(cls, reg, stride=2, K=100):
+    batch, cat, height, width = cls.size()
+    cls = _nms(cls)
+
+    scores, inds, clses, ys, xs = _topk(cls, K=K)
+    xs = (xs.view(batch, K, 1) + 0.5) * stride
+    ys = (ys.view(batch, K, 1) + 0.5) * stride
+    reg = _tranpose_and_gather_feat(reg, inds)
+
+    clses = clses.view(batch, K, 1).float()
+    scores = scores.view(batch, K, 1)
+    bboxes = torch.cat([xs - reg[..., 0:1],
+                        ys - reg[..., 1:2],
+                        xs + reg[..., 2:3],
+                        ys + reg[..., 3:4]], dim=2)
+    detections = torch.cat([bboxes, scores, clses], dim=2)
+
+    return detections

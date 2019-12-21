@@ -7,6 +7,7 @@ from .ddd import DddDetector
 from .ctdet import CtdetDetector
 from .multi_pose import MultiPoseDetector
 from .fcos import FCOSDetector
+from .ttfnet import TTFDetector
 
 detector_factory = {
   'exdet': ExdetDetector, 
@@ -14,4 +15,5 @@ detector_factory = {
   'ctdet': CtdetDetector,
   'multi_pose': MultiPoseDetector,
   'fcos': FCOSDetector,
+  'ttf': TTFDetector,
 }

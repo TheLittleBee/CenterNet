@@ -11,7 +11,7 @@ class opts(object):
     self.parser = argparse.ArgumentParser()
     # basic experiment setting
     self.parser.add_argument('task', default='ctdet',
-                             help='ctdet | ddd | multi_pose | exdet | fcos')
+                             help='ctdet | ddd | multi_pose | exdet | fcos | ttf')
     self.parser.add_argument('--dataset', default='coco',
                              help='coco | kitti | coco_hp | pascal')
     self.parser.add_argument('--data_dir', default='')
@@ -349,6 +349,8 @@ class opts(object):
     elif opt.task == 'fcos':
       opt.heads = opt.num_classes
       opt.head_conv = 4
+    elif opt.task == 'ttf':
+      opt.heads = {'ttf': opt.num_classes}
     else:
       assert 0, 'task not defined!'
     print('heads', opt.heads)
