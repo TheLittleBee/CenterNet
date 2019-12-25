@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 import numpy as np
 
 from models.utils import _sigmoid
@@ -12,14 +13,31 @@ from models.losses import FocalLoss
 from .fcos import IOULoss
 
 
+class L1Loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pred, target, weight=None):
+        loss = F.l1_loss(pred, target, reduction='none')
+        if weight is not None:
+            if weight.dim() == 1:
+                weight = weight[:, None]
+            assert weight.dim() == 2
+            loss = loss * weight
+        return loss.sum()
+
+
 class TTFLoss(nn.Module):
 
     def __init__(self, opt):
         super().__init__()
         self.alpha = 0.54
         self.beta = 0.54
+        self.wh_gaussian = True
+        self.sample = 0
         self.crit = FocalLoss()
-        self.wh_crit = IOULoss('linear_iou')
+        # self.wh_crit = IOULoss('diou')
+        self.wh_crit = L1Loss()
 
         self.opt = opt
 
@@ -33,14 +51,19 @@ class TTFLoss(nn.Module):
         pos_inds = reg_weight > 0
         avg_factor = reg_weight.sum().clamp(min=1)
 
-        wh = wh.permute(0, 2, 3, 1)
+        wh = wh.permute(0, 2, 3, 1).contiguous()
         if pos_inds.sum() > 0:
-            wh_loss = self.wh_crit(wh[pos_inds], box_target[pos_inds], reg_weight[pos_inds]) / avg_factor
+            # wh_loss = self.wh_crit(wh[pos_inds], box_target[pos_inds], reg_weight[pos_inds]) / avg_factor
+            wh_pos = wh[pos_inds] / self.opt.down_ratio
+            box_pos = box_target[pos_inds] / self.opt.down_ratio
+            wh_loss = self.wh_crit(wh_pos, box_pos, reg_weight[pos_inds]) / avg_factor
         else:
             wh_loss = wh[pos_inds].sum()
-        assert not torch.isnan(hm_loss) and not torch.isnan(wh_loss), 'hm {}; wh {}; heatmap {}; box_target {}; reg_weight {}'.format(
-            torch.isnan(hm).sum().item(),torch.isnan(wh).sum().item(),torch.isnan(heatmap).sum().item(),torch.isnan(box_target).sum().item(),torch.isnan(reg_weight).sum().item()
-        )
+        assert not torch.isnan(hm_loss) and not torch.isnan(wh_loss), \
+            'hm {}; wh {}; heatmap {}; box_target {}; reg_weight {}'.format(
+                torch.isnan(hm).sum().item(), torch.isnan(wh).sum().item(), torch.isnan(heatmap).sum().item(),
+                torch.isnan(box_target).sum().item(), torch.isnan(reg_weight).sum().item()
+            )
         loss = hm_loss + wh_loss
         loss_stats = {'loss': loss, 'hm': hm_loss, 'wh': wh_loss}
         return loss, loss_stats
@@ -103,7 +126,7 @@ class TTFLoss(nn.Module):
             gt_boxes = target[i][mask[i]][:, 1:]
             gt_labels = target[i][mask[i]][:, 0]
             boxes_areas_log = (gt_boxes[:, 2] - gt_boxes[:, 0]) * (gt_boxes[:, 3] - gt_boxes[:, 1])
-            boxes_areas_log = boxes_areas_log.log()
+            boxes_areas_log = boxes_areas_log.clamp(min=1).log()
             boxes_area_topk_log, boxes_ind = torch.sort(boxes_areas_log, descending=True)
 
             gt_boxes = gt_boxes[boxes_ind]
@@ -123,7 +146,7 @@ class TTFLoss(nn.Module):
 
             h_radiuses_alpha = (feat_hs / 2. * self.alpha).int()
             w_radiuses_alpha = (feat_ws / 2. * self.alpha).int()
-            if self.alpha != self.beta:
+            if self.wh_gaussian and self.alpha != self.beta:
                 h_radiuses_beta = (feat_hs / 2. * self.beta).int()
                 w_radiuses_beta = (feat_ws / 2. * self.beta).int()
 
@@ -136,12 +159,17 @@ class TTFLoss(nn.Module):
                                             h_radiuses_alpha[k].item(), w_radiuses_alpha[k].item())
                 heatmap[i, cls_id] = torch.max(heatmap[i, cls_id], fake_heatmap)
 
-                if self.alpha != self.beta:
+                if self.wh_gaussian and self.alpha != self.beta:
                     fake_heatmap = fake_heatmap.zero_()
                     self.draw_truncate_gaussian(fake_heatmap, ct_ints[k],
                                                 h_radiuses_beta[k].item(),
                                                 w_radiuses_beta[k].item())
-                box_target_inds = fake_heatmap > 0
+                if self.wh_gaussian and self.sample < 0:
+                    box_target_inds = fake_heatmap > 0
+                else:
+                    box_target_inds = torch.zeros_like(fake_heatmap, dtype=torch.uint8)
+                    cx, cy = ct_ints[k]
+                    box_target_inds[cy - self.sample:cy + self.sample + 1, cx - self.sample:cx + self.sample + 1] = 1
                 l = xs - gt_boxes[k][0]
                 t = ys - gt_boxes[k][1]
                 r = gt_boxes[k][2] - xs
@@ -150,7 +178,7 @@ class TTFLoss(nn.Module):
                 box_target[i, box_target_inds] = reg_target[box_target_inds]
 
                 local_heatmap = fake_heatmap[box_target_inds]
-                ct_div = local_heatmap.sum() + 1e-7
+                ct_div = local_heatmap.sum().clamp(min=1)
                 local_heatmap *= 2 - boxes_area_topk_log[k] / (boxes_area_topk_log[0] + 1e-7)
                 reg_weight[i, box_target_inds] = local_heatmap / ct_div
 

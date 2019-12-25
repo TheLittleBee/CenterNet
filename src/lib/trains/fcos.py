@@ -21,11 +21,15 @@ class IOULoss(nn.Module):
         pred_top = pred[:, 1]
         pred_right = pred[:, 2]
         pred_bottom = pred[:, 3]
+        pred_cx = (pred_left - pred_right) / 2
+        pred_cy = (pred_top - pred_bottom) / 2
 
         target_left = target[:, 0]
         target_top = target[:, 1]
         target_right = target[:, 2]
         target_bottom = target[:, 3]
+        target_cx = (target_left - target_right) / 2
+        target_cy = (target_top - target_bottom) / 2
 
         target_area = (target_left + target_right) * \
                       (target_top + target_bottom)
@@ -41,12 +45,16 @@ class IOULoss(nn.Module):
         area_union = target_area + pred_area - area_intersect + 1e-7
         ious = area_intersect / area_union
         gious = ious - (ac_uion - area_union) / ac_uion
+        center_dis = (pred_cx - target_cx) ** 2 + (pred_cy - target_cy) ** 2
+        g_dis = g_w_intersect ** 2 + g_h_intersect ** 2 + 1e-7
         if self.loss_type == 'iou':
             losses = -torch.log(ious)
         elif self.loss_type == 'linear_iou':
             losses = 1 - ious
         elif self.loss_type == 'giou':
             losses = 1 - gious
+        elif self.loss_type == 'diou':
+            losses = 1 - ious + center_dis / g_dis
         else:
             raise NotImplementedError
 

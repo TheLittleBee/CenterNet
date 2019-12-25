@@ -601,9 +601,10 @@ def ttf_decode(cls, reg, stride=2, K=100):
     cls = _nms(cls)
 
     scores, inds, clses, ys, xs = _topk(cls, K=K)
-    xs = (xs.view(batch, K, 1) + 0.5) * stride
-    ys = (ys.view(batch, K, 1) + 0.5) * stride
+    xs = xs.view(batch, K, 1) * stride
+    ys = ys.view(batch, K, 1) * stride
     reg = _tranpose_and_gather_feat(reg, inds)
+    reg = reg.view(batch, K, 4)
 
     clses = clses.view(batch, K, 1).float()
     scores = scores.view(batch, K, 1)
