@@ -144,7 +144,7 @@ class YOLO(data.Dataset):
             draw_umich_gaussian
 
         gt_det = []
-        if self.opt.task in ['fcos', 'ttf']:  # using original target
+        if self.opt.task in ['fcos']:#, 'ttf']:  # using original target
             trans_output = trans_input
             output_w, output_h = input_w, input_h
         for k in range(num_objs):
@@ -163,7 +163,7 @@ class YOLO(data.Dataset):
             bbox[[0, 2]] = np.clip(bbox[[0, 2]], 0, output_w - 1)
             bbox[[1, 3]] = np.clip(bbox[[1, 3]], 0, output_h - 1)
             h, w = bbox[3] - bbox[1], bbox[2] - bbox[0]
-            if self.opt.task in ['fcos', 'ttf']:
+            if self.opt.task in ['fcos']:#, 'ttf']:
                 target[k] = cls_id, bbox[0], bbox[1], bbox[2], bbox[3]
                 if h > 0 and w > 0:
                     reg_mask[k] = 1
@@ -181,6 +181,7 @@ class YOLO(data.Dataset):
                 ind[k] = ct_int[1] * output_w + ct_int[0]
                 reg[k] = ct - ct_int
                 reg_mask[k] = 1
+                # reg_mask[k] = 2 - w * h / output_w / output_h
                 cat_spec_wh[k, cls_id * 2: cls_id * 2 + 2] = wh[k]
                 cat_spec_mask[k, cls_id * 2: cls_id * 2 + 2] = 1
                 if self.opt.dense_wh:
@@ -188,7 +189,7 @@ class YOLO(data.Dataset):
                 gt_det.append([ct[0] - w / 2, ct[1] - h / 2,
                                ct[0] + w / 2, ct[1] + h / 2, 1, cls_id])
 
-        if self.opt.task in ['fcos', 'ttf']:
+        if self.opt.task in ['fcos']:#, 'ttf']:
             ret = {'input': inp, 'target': target, 'mask': reg_mask}
             return ret
         ret = {'input': inp, 'hm': hm, 'reg_mask': reg_mask, 'ind': ind, 'wh': wh}

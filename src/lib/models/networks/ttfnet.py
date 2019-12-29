@@ -26,13 +26,14 @@ class TTFHead(nn.Module):
             nn.Conv2d(head_conv, 4,
                       kernel_size=1, stride=1,
                       padding=0, bias=True))
-        fill_fc_weights(self.hm)
+        # fill_fc_weights(self.hm)
         fill_fc_weights(self.wh)
         self.hm[-1].bias.data.fill_(-2.19)
-        self.wh[-1].bias.data.fill_(0.5)
+        # self.wh[-1].bias.data.fill_(0.5)
 
     def forward(self, x):
         hm = self.hm(x)
-        wh = F.relu(self.wh(x))
+        # wh = F.relu(self.wh(x))
+        wh = self.wh(x)
 
         return hm, wh

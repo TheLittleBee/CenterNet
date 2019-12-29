@@ -7,7 +7,8 @@ from .ddd import DddTrainer
 from .exdet import ExdetTrainer
 from .multi_pose import MultiPoseTrainer
 from .fcos import FCOSTrainer
-from .ttfnet import TTFTrainer
+# from .ttfnet import TTFTrainer
+from .ttfmd import TTFTrainer
 
 train_factory = {
   'exdet': ExdetTrainer, 

@@ -14,6 +14,7 @@ except:
 
 from .base_detector import BaseDetector
 from models.decode import ttf_decode
+from utils.post_process import ctdet_post_process
 
 
 class TTFDetector(BaseDetector):
@@ -25,7 +26,7 @@ class TTFDetector(BaseDetector):
             output = self.model(images)[-1]
             hm, wh = output
             hm = hm.sigmoid_()
-            wh *= 4 * self.opt.down_ratio
+            # wh *= 4 * self.opt.down_ratio
             torch.cuda.synchronize()
             forward_time = time.time()
 
@@ -37,11 +38,20 @@ class TTFDetector(BaseDetector):
             return output, dets
 
     def post_process(self, dets, meta, scale=1):
-        ret = {}
+        dets = dets.detach().cpu().numpy()
+        dets = dets.reshape(1, -1, dets.shape[2])
+        dets = ctdet_post_process(
+            dets.copy(), [meta['c']], [meta['s']],
+            meta['out_height'], meta['out_width'], self.opt.num_classes)
         for j in range(1, self.num_classes + 1):
-            ret[j] = dets[dets[..., -1] == j - 1][..., :-1].cpu().numpy().reshape(-1, 5)    # pytorch version incompatible
-            ret[j][:, :4] /= scale
-        return ret
+            dets[0][j] = np.array(dets[0][j], dtype=np.float32).reshape(-1, 5)
+            dets[0][j][:, :4] /= scale
+        return dets[0]
+        # ret = {}
+        # for j in range(1, self.num_classes + 1):
+        #     ret[j] = dets[dets[..., -1] == j - 1][..., :-1].cpu().numpy().reshape(-1, 5)    # pytorch version incompatible
+        #     ret[j][:, :4] /= scale
+        # return ret
 
     def merge_outputs(self, detections):
         results = {}
